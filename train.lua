@@ -23,6 +23,7 @@ local hooks = require 'fairseq.torchnet.hooks'
 local data = require 'fairseq.torchnet.data'
 local search = require 'fairseq.search'
 local utils = require 'fairseq.utils'
+local pastalog = require 'pastalog'
 
 local cuda = utils.loadCuda()
 -- we require cuda for training
@@ -100,9 +101,13 @@ cmd:option('-fconv_kwidths', '',
     'comma-separated list of kernel widths for conv encoder')
 cmd:option('-fconv_klmwidths', '',
     'comma-separated list of kernel widths for convolutional language model')
+cmd:option('-log_name', 'model', 'log name for pastalog')
+cmd:option('-pastalog_server', 'http://localhost:8120', 'pastalog server url')
 
 
 local config = cmd:parse(arg)
+
+pastalog_server = config.pastalog_server .. '/data'
 
 if config.dropout_src < 0 then config.dropout_src = config.dropout end
 if config.dropout_tgt < 0 then config.dropout_tgt = config.dropout end
@@ -330,6 +335,8 @@ local onCheckpoint = hooks.call{
         gensets = {valid = gensets.valid},
         annealing = annealing,
         earlyStopping = (not annealing and not config.noearlystop),
+        pastalog_server = pastalog_server,
+        log_name = config.log_name .. '/cp',
     },
     function(state)
         checkpointLossMeter:reset()
@@ -368,6 +375,12 @@ engine.hooks.onUpdate = hooks.call{
             end
             print(statsstr)
             io.stdout:flush()
+
+            pastalog(config.log_name, 'epoch', state.epoch, state.t, pastalog_server)
+            pastalog(config.log_name, 'words/s', lossMeter.n / elapsed, state.t, pastalog_server)
+            pastalog(config.log_name, 'trainloss', loss, state.t, pastalog_server)
+            pastalog(config.log_name, 'train ppl', ppl, state.t, pastalog_server)
+
             timeMeter:reset()
             lossMeter:reset()
         end

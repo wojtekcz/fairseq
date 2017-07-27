@@ -25,6 +25,7 @@ local pltablex = require 'pl.tablex'
 local plpath = require 'pl.path'
 local utils = require 'fairseq.utils'
 local clib = require 'fairseq.clib'
+local pastalog = require 'pastalog'
 
 local cuda = utils.loadCuda()
 
@@ -254,8 +255,10 @@ hooks.onCheckpoint = argcheck{
     {name='gensets', type='table', opt=true},
     {name='annealing', type='boolean', opt=false},
     {name='earlyStopping', type='boolean', opt=false},
+    {name='log_name', type='string', opt=true},
+    {name='pastalog_server', type='string', opt=true},
     call = function(engine, config, lossMeter, timeMeter,
-        runTest, testsets, runGeneration, gensets, annealing, earlyStopping)
+        runTest, testsets, runGeneration, gensets, annealing, earlyStopping, log_name, pastalog_server)
         return function(state)
             -- Init hook state
             if not state._onCheckpoint then
@@ -289,6 +292,12 @@ hooks.onCheckpoint = argcheck{
                     state.dictstats.size / state.dictstats.n)
             end
             print(statsstr)
+
+            pastalog(log_name, 'epoch', state.epoch, state.t, pastalog_server)
+            pastalog(log_name, 's/checkpnt', cptime, state.t, pastalog_server)
+            pastalog(log_name, 'words/s', lossMeter.n / cptime, state.t, pastalog_server)
+            pastalog(log_name, 'lr', state.optconfig.learningRate * config.lrscale, state.t, pastalog_server)
+
             stats['secspercp'] = cptime
             stats['wordspersec'] = lossMeter.n / cptime
             stats['current_lr'] = state.optconfig.learningRate * config.lrscale
@@ -299,6 +308,10 @@ hooks.onCheckpoint = argcheck{
                 '%s | trainloss %8.2f | train ppl %8.2f',
                 logPrefix, loss, ppl)
             )
+
+            pastalog(log_name, 'trainloss', loss, state.t, pastalog_server)
+            pastalog(log_name, 'train ppl', ppl, state.t, pastalog_server)
+
             stats['trainloss'] = loss
             stats['trainppl'] = ppl
 
@@ -312,6 +325,10 @@ hooks.onCheckpoint = argcheck{
                 local ppl = math.pow(2, loss)
                 str2print = string.format('%s | %sloss %8.2f | %s ppl %8.2f',
                     str2print, name, loss, name, ppl)
+
+                pastalog(log_name, name .. 'loss', loss, state.t, pastalog_server)
+                pastalog(log_name, name .. ' ppl', ppl, state.t, pastalog_server)
+
                 stats[name .. 'ppl'] = ppl
                 stats[name .. 'loss'] = loss
             end
@@ -327,6 +344,10 @@ hooks.onCheckpoint = argcheck{
                         '%s | %sbleu %8.2f | %s BP  %8.2f',
                         str2print, name, result.bleu, name, result.brevPenalty
                     )
+
+                    pastalog(log_name, name .. 'bleu', result.bleu, state.t, pastalog_server)
+                    pastalog(log_name, name .. 'bp', result.brevPenalty, state.t, pastalog_server)
+
                     stats[name .. 'bleu'] = result.bleu
                     stats[name .. 'bp'] = result.brevPenalty
                 end
